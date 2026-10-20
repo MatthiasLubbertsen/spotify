@@ -1,0 +1,39 @@
+services:
+  spotify-proxy:
+    image: ghcr.io/matthiaslubbertsen/spotify:latest
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - spotify-data:/data
+    networks: [traefik]
+    # No published ports: only Traefik may reach the app, otherwise the forward-auth
+    # header that protects /dashboard could be forged.
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      - traefik.http.services.spotify-proxy.loadbalancer.server.port=8080
+
+      # Public router: OAuth flow (/authorize, /callback, /api/token), API proxy (/v1/*),
+      # landing page + assets, /healthz. Protected by the app's own client auth and tokens.
+      - traefik.http.routers.spotify-public.rule=Host(`${DOMAIN:-spotify.matthiaz.dev}`)
+      - traefik.http.routers.spotify-public.priority=10
+      - traefik.http.routers.spotify-public.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.spotify-public.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.routers.spotify-public.service=spotify-proxy
+
+      # Dashboard router: everything under /dashboard goes through Tinyauth forward-auth.
+      - traefik.http.routers.spotify-dashboard.rule=Host(`${DOMAIN:-spotify.matthiaz.dev}`) && PathPrefix(`/dashboard`)
+      - traefik.http.routers.spotify-dashboard.priority=100
+      - traefik.http.routers.spotify-dashboard.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.spotify-dashboard.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.routers.spotify-dashboard.middlewares=${TINYAUTH_MIDDLEWARE:-tinyauth@docker}
+      - traefik.http.routers.spotify-dashboard.service=spotify-proxy
+
+volumes:
+  spotify-data:
+
+networks:
+  traefik:
+    name: ${TRAEFIK_NETWORK:-traefik}
+    external: true
