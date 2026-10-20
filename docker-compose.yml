@@ -1,0 +1,43 @@
+# spotis behind Traefik. Tinyauth protects ONLY the dashboard; OAuth + API paths stay public
+# and are guarded by each virtual app's own client auth and tokens.
+#
+# Assumes a Traefik instance with a `websecure` entrypoint + `letsencrypt` resolver and a
+# Tinyauth container that defines the `tinyauth` forward-auth middleware, e.g. on the tinyauth service:
+#   traefik.http.middlewares.tinyauth.forwardauth.address=http://tinyauth:3000/api/auth/traefik
+#   traefik.http.middlewares.tinyauth.forwardauth.authResponseHeaders=remote-user,remote-email,remote-name,remote-groups
+services:
+  spotis:
+    image: ghcr.io/matthiaslubbertsen/spotify:latest
+    restart: unless-stopped
+    environment:
+      SPOTIS_PUBLIC_URL: https://spotify.matthiaz.dev
+      # SPOTIS_DASHBOARD_USERS: you@example.com   # optional extra allowlist on top of Tinyauth
+      # SPOTIS_SECRET_KEY: change-me               # optional; otherwise generated in /data/secret.key
+    volumes:
+      - spotis-data:/data
+    networks: [traefik]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik
+      traefik.http.services.spotis.loadbalancer.server.port: "8080"
+
+      # Public router: landing page, /authorize, /api/token, /oauth/callback, /v1/*
+      traefik.http.routers.spotis.rule: Host(`spotify.matthiaz.dev`)
+      traefik.http.routers.spotis.entrypoints: websecure
+      traefik.http.routers.spotis.tls.certresolver: letsencrypt
+      traefik.http.routers.spotis.service: spotis
+
+      # Dashboard router: higher priority, behind Tinyauth forward-auth
+      traefik.http.routers.spotis-dashboard.rule: Host(`spotify.matthiaz.dev`) && PathPrefix(`/dashboard`)
+      traefik.http.routers.spotis-dashboard.priority: "100"
+      traefik.http.routers.spotis-dashboard.entrypoints: websecure
+      traefik.http.routers.spotis-dashboard.tls.certresolver: letsencrypt
+      traefik.http.routers.spotis-dashboard.middlewares: tinyauth@docker
+      traefik.http.routers.spotis-dashboard.service: spotis
+
+volumes:
+  spotis-data:
+
+networks:
+  traefik:
+    external: true

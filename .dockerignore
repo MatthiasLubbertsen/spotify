@@ -1,0 +1,7 @@
+.git
+data
+frontend/node_modules
+frontend/dist
+internal/webui/dist
+*.db
+.env
