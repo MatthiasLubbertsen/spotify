@@ -45,7 +45,7 @@ at login (`oauth.Callback`, 403 from `/v1/me`).
 | `GET /now-playing` | anything that can poll (displays, widgets, scripts) | per-user API key (`spk_…`) |
 | `/dashboard`, `/dashboard/*`, `/dashboard/api/*` | the owner | **Tinyauth via Traefik forward-auth** |
 
-**3a. Traefik:** two routers (see `docker-compose.yml`): public one for the host, plus a higher-priority router for `PathPrefix(/dashboard)` carrying the `tinyauth@docker` middleware. No OAuth inside the app.
+**3a. Traefik:** two routers (see `docker-compose.yml`): public one for the host, plus a higher-priority router for `PathPrefix(/dashboard)` carrying the `tinyauth@docker` middleware. No OAuth inside the app. Deployed on Hack Club Nest: Nest's proxy terminates TLS, so both routers use Traefik's plain `web` entrypoint on the external `proxy` network (no cert resolver, no host port). The Tinyauth middleware needs `authResponseHeaders=remote-user,remote-email,remote-name,remote-groups` and an ACL entry `TINYAUTH_APPS_SPOTIFY_USERS_ALLOW` (policy is deny).
 **3b. Defence in depth:** the app also refuses `/dashboard*` without the forwarded `Remote-User`/`Remote-Email` header, optionally restricts to `SPOTIS_DASHBOARD_USERS`, and rejects cross-origin writes (Origin / Sec-Fetch-Site). Never expose the app port directly: those headers are only trustworthy behind Traefik.
 **3c. Upstream redirect URI to register at Spotify:** `${SPOTIS_PUBLIC_URL}/oauth/callback` (https).
 
@@ -98,6 +98,7 @@ Researched from developer.spotify.com (Oct 2026):
 **9b.** `go test ./internal/server` is the quick full-flow check (includes now-playing keys): dashboard auth → upstream config → app create → authorize (PKCE) → callback → token → proxied call with URL rewriting → refresh → client credentials → secret rotation → revoke → rate limits → cooldown → allowlist page → usage log → app delete.
 **9c.** CI (`.github/workflows/ci.yml`): typecheck/build frontend, `go vet`, `go test -race`, then multi-arch Docker image to GHCR (push on `main` and `v*` tags; PRs build only).
 **9d.** Go toolchain follows `go.mod` (1.26).
+**9e.** The image runs as distroless `nonroot` (uid 65532) and ships `/data` owned by it, so a new named volume is writable. Volumes created before that fix need a one-off `chown 65532:65532`.
 
 ## 10. First-time setup
 
