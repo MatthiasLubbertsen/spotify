@@ -43,6 +43,9 @@ func (a *API) Handler() http.Handler {
 	m.HandleFunc("GET /grants", a.listGrants)
 	m.HandleFunc("DELETE /grants/{id}", a.deleteGrant)
 	m.HandleFunc("DELETE /users/{id}", a.deleteUser)
+	m.HandleFunc("GET /keys", a.listKeys)
+	m.HandleFunc("POST /grants/{id}/keys", a.createKey)
+	m.HandleFunc("DELETE /keys/{id}", a.deleteKey)
 	m.HandleFunc("GET /usage", a.usage)
 	m.HandleFunc("GET /requests", a.requests)
 	return a.guard(m)
@@ -383,4 +386,46 @@ func (a *API) requests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	util.WriteJSON(w, 200, rs)
+}
+
+// ---- now-playing API keys ----
+
+func (a *API) listKeys(w http.ResponseWriter, r *http.Request) {
+	ks, err := a.St.ListAPIKeys()
+	if err != nil {
+		jerr(w, 500, "could not load keys")
+		return
+	}
+	util.WriteJSON(w, 200, ks)
+}
+
+func (a *API) createKey(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if _, err := a.St.GetGrant(id); err != nil {
+		jerr(w, 404, "connection not found")
+		return
+	}
+	var in struct {
+		Label string `json:"label"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&in)
+	if len(in.Label) > 80 {
+		in.Label = in.Label[:80]
+	}
+	key := "spk_" + util.RandToken(24)
+	k, err := a.St.CreateAPIKey(id, strings.TrimSpace(in.Label), util.Hash(key), key[:8])
+	if err != nil {
+		jerr(w, 500, "could not create key")
+		return
+	}
+	util.WriteJSON(w, 201, map[string]any{"key_info": k, "key": key})
+}
+
+func (a *API) deleteKey(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if ok, err := a.St.DeleteAPIKey(id); err != nil || !ok {
+		jerr(w, 404, "key not found")
+		return
+	}
+	w.WriteHeader(204)
 }

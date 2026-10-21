@@ -4,6 +4,7 @@ package usage
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"spotis/internal/store"
@@ -88,7 +89,7 @@ func (r *recorder) Flush() {
 func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // Wrap logs every request through next. kind is "oauth" or "api". Query strings are
-// only kept for api requests (oauth queries carry codes and state).
+// only kept for /v1/ requests (other queries carry codes, state or API keys).
 func (l *Logger) Wrap(kind string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -99,7 +100,7 @@ func (l *Logger) Wrap(kind string, next http.Handler) http.Handler {
 			rec.status = 200
 		}
 		path := r.URL.Path
-		if kind == "api" && r.URL.RawQuery != "" {
+		if strings.HasPrefix(r.URL.Path, "/v1/") && r.URL.RawQuery != "" {
 			q := r.URL.RawQuery
 			if len(q) > 200 {
 				q = q[:200]

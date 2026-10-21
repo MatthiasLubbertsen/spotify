@@ -3,6 +3,7 @@ import { Confirm, Empty, GrantStatus } from "@/components/common"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { KeysDialog } from "@/components/keys-dialog"
 import { useAction } from "@/lib/hooks"
 import { relTime } from "@/lib/format"
 
@@ -35,6 +36,7 @@ export function GrantsTable({ rows, showApp, loading }: { rows?: Grant[]; showAp
             <TableCell className="text-muted-foreground">{relTime(g.created_at)}</TableCell>
             <TableCell className="text-muted-foreground">{relTime(g.last_used_at)}</TableCell>
             <TableCell className="space-x-2 text-right whitespace-nowrap">
+              <KeysDialog grant={g} />
               <Confirm trigger={<Button variant="outline" size="sm">Revoke</Button>} title="Revoke access?"
                 description={`${g.display_name || g.spotify_id} will be signed out of ${g.app_name} and must log in again.`}
                 action="Revoke" onConfirm={() => revoke.mutate(g.id)} />

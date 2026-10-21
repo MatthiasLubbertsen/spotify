@@ -14,6 +14,7 @@ import (
 	"spotis/internal/config"
 	"spotis/internal/crypto"
 	"spotis/internal/dashboard"
+	"spotis/internal/nowplaying"
 	"spotis/internal/oauth"
 	"spotis/internal/proxy"
 	"spotis/internal/store"
@@ -35,6 +36,7 @@ func New(cfg config.Config, st *store.Store, box *crypto.Box) http.Handler {
 	mux.Handle("GET /oauth/callback", lg.Wrap("oauth", http.HandlerFunc(oa.Callback)))
 	mux.Handle("POST /api/token", lg.Wrap("oauth", http.HandlerFunc(oa.Token)))
 	mux.Handle("/v1/", lg.Wrap("api", px))
+	mux.Handle("/now-playing", lg.Wrap("api", nowplaying.New(st, up)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.Handle("/dashboard/api/", http.StripPrefix("/dashboard/api", noStore(dash.Handler())))
 	mux.Handle("/dashboard/", requireIdentity(cfg.AllowedUsers, ui))

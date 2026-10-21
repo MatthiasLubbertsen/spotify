@@ -67,8 +67,8 @@ export default function AppDetail() {
         <TabsContent value="credentials" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Client secret</CardTitle>
-              <CardDescription>Rotated {relTime(a.secret_rotated_at)}. Rotating invalidates the old secret immediately; existing user tokens keep working.</CardDescription>
+              <CardTitle className="text-base">Client credentials</CardTitle>
+              <CardDescription>Client ID below. The secret is stored hashed and only shown when created or rotated (last rotated {relTime(a.secret_rotated_at)}). Rotating invalidates the old secret immediately; existing user tokens keep working.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <CopyField value={a.id} />

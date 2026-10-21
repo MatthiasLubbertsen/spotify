@@ -26,10 +26,11 @@ type fakeSpotify struct {
 	lastAPI   string // bearer seen by the last /v1 call
 	refreshes int
 	banned    bool // /v1/me answers 403 (user not allowlisted)
+	scope     string
 }
 
 func newFake(t *testing.T) *fakeSpotify {
-	f := &fakeSpotify{}
+	f := &fakeSpotify{scope: "user-read-private"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -53,7 +54,7 @@ func newFake(t *testing.T) *fakeSpotify {
 				_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"access_token":"up-access-1","token_type":"Bearer","scope":"user-read-private","expires_in":3600,"refresh_token":"up-refresh"}`))
+			_, _ = w.Write([]byte(`{"access_token":"up-access-1","token_type":"Bearer","scope":"` + f.scope + `","expires_in":3600,"refresh_token":"up-refresh"}`))
 		case "refresh_token":
 			f.mu.Lock()
 			f.refreshes++
@@ -77,6 +78,11 @@ func newFake(t *testing.T) *fakeSpotify {
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"tracks":{"href":"` + f.URL + `/v1/search?q=x","next":"` + f.URL + `/v1/search?q=x&offset=5"}}`))
+	})
+	mux.HandleFunc("/v1/me/player/currently-playing", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"is_playing":true,"progress_ms":1234,"currently_playing_type":"track","item":{"id":"t1","name":"Song","duration_ms":200000,
+			"external_urls":{"spotify":"https://open.spotify.com/track/t1"},"artists":[{"name":"A"},{"name":"B"}],"album":{"name":"Alb","images":[{"url":"http://img/1.jpg"}]}}}`))
 	})
 	mux.HandleFunc("/v1/limited", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "2")
@@ -281,6 +287,37 @@ func TestFullFlow(t *testing.T) {
 	if len(gs) != 1 || gs[0]["spotify_id"] != "alice" {
 		t.Fatalf("grants: %s", b)
 	}
+
+	// Now-playing endpoint: API key, no OAuth. Needs the right scope on the grant.
+	gid := itoa(gs[0]["id"])
+	resp, b = e.do("POST", "/dashboard/api/grants/"+gid+"/keys", map[string]string{"label": "desk"}, dash)
+	e.want(resp, 201, b)
+	apiKey := jsonOf(b)["key"].(string)
+	keyID := itoa(jsonOf(b)["key_info"].(map[string]any)["id"])
+	resp, b = e.do("GET", "/now-playing", nil, nil)
+	e.want(resp, 401, b)
+	resp, b = e.do("GET", "/now-playing", nil, map[string]string{"X-API-Key": "spk_nope"})
+	e.want(resp, 401, b)
+	resp, b = e.do("GET", "/now-playing", nil, map[string]string{"X-API-Key": apiKey})
+	e.want(resp, 403, b) // grant lacks user-read-currently-playing
+	e.fake.scope = "user-read-private user-read-currently-playing"
+	if e.login(id, redirect, "") == nil { // re-login upgrades the same grant, key survives
+		t.Fatal("re-login failed")
+	}
+	resp, b = e.do("GET", "/now-playing?key="+apiKey, nil, nil)
+	e.want(resp, 200, b)
+	np := jsonOf(b)
+	it, _ := np["item"].(map[string]any)
+	if np["is_playing"] != true || it["name"] != "Song" || it["album"] != "Alb" || it["image"] != "http://img/1.jpg" || len(it["artists"].([]any)) != 2 {
+		t.Fatalf("now-playing: %s", b)
+	}
+	resp, b = e.do("GET", "/now-playing", nil, map[string]string{"Authorization": "Bearer " + apiKey})
+	e.want(resp, 200, b)
+	resp, b = e.do("DELETE", "/dashboard/api/keys/"+keyID, nil, dash)
+	e.want(resp, 204, b)
+	resp, b = e.do("GET", "/now-playing", nil, map[string]string{"X-API-Key": apiKey})
+	e.want(resp, 401, b)
+
 	resp, b = e.do("DELETE", "/dashboard/api/grants/"+itoa(gs[0]["id"]), nil, dash)
 	e.want(resp, 204, b)
 	resp, b = e.do("GET", "/v1/search?q=x", nil, map[string]string{"Authorization": "Bearer " + access2})
@@ -325,6 +362,9 @@ func TestFullFlow(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 	resp, b = e.do("GET", "/dashboard/api/requests?app="+id, nil, dash)
 	e.want(resp, 200, b)
+	if strings.Contains(string(b), "spk_") {
+		t.Fatalf("API key leaked into request log: %s", b)
+	}
 	if !strings.Contains(string(b), "/v1/search") {
 		t.Fatalf("requests missing: %s", b)
 	}

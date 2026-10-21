@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { api, type App, type Config, type Grant, type Req, type Upstream, type Usage } from "./api"
+import { api, type ApiKey, type App, type Config, type Grant, type Req, type Upstream, type Usage } from "./api"
 
 export const useConfig = () => useQuery({ queryKey: ["config"], queryFn: () => api<Config>("/config"), refetchInterval: 15000 })
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: () => api<{ user: string; email: string }>("/me") })
@@ -9,6 +9,7 @@ export const useApp = (id: string) => useQuery({ queryKey: ["apps", id], queryFn
 export const useUpstream = () => useQuery({ queryKey: ["upstream"], queryFn: () => api<Upstream>("/upstream") })
 export const useGrants = (app?: string) =>
   useQuery({ queryKey: ["grants", app ?? ""], queryFn: () => api<Grant[]>(`/grants${app ? `?app=${app}` : ""}`) })
+export const useKeys = () => useQuery({ queryKey: ["keys"], queryFn: () => api<ApiKey[]>("/keys") })
 export const useUsage = (range: string, app?: string) =>
   useQuery({
     queryKey: ["usage", range, app ?? ""],

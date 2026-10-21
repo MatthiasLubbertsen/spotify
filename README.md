@@ -32,4 +32,14 @@ make web       # build the dashboard into internal/webui/dist
 make run       # http://localhost:8080 (send a Remote-User header for /dashboard)
 ```
 
+## Now playing (API key, no OAuth)
+
+Dashboard → **Users** → *Now playing* creates a key for one connected user (their login must include the
+`user-read-currently-playing` scope). Then poll:
+
+```sh
+curl -H "X-API-Key: spk_..." https://spotify.matthiaz.dev/now-playing
+# {"is_playing":true,"progress_ms":83000,"item":{"name":"Midnight City","artists":["M83"],"album":"...","image":"...","duration_ms":243000,...}}
+```
+
 Design notes and decisions live in [AGENTS.md](AGENTS.md). Images are built by GitHub Actions and published to GHCR.

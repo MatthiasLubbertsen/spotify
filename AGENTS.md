@@ -42,6 +42,7 @@ at login (`oauth.Callback`, 403 from `/v1/me`).
 | `GET /oauth/callback` | **Spotify** (the one fixed upstream redirect URI) | single-use `state` bound to a pending request |
 | `POST /api/token` | client libraries | virtual app client auth (Basic or body) / PKCE verifier |
 | `/v1/*` | client libraries | `Bearer` spotis token |
+| `GET /now-playing` | anything that can poll (displays, widgets, scripts) | per-user API key (`spk_…`) |
 | `/dashboard`, `/dashboard/*`, `/dashboard/api/*` | the owner | **Tinyauth via Traefik forward-auth** |
 
 **3a. Traefik:** two routers (see `docker-compose.yml`): public one for the host, plus a higher-priority router for `PathPrefix(/dashboard)` carrying the `tinyauth@docker` middleware. No OAuth inside the app.
@@ -66,15 +67,23 @@ Researched from developer.spotify.com (Oct 2026):
 **5e. Stale upstream token:** an upstream 401 triggers one transparent retry with a fresh token (only when the body is replayable).
 **5f. Not mimicked:** Spotify removed many endpoints for dev-mode apps in Feb 2026 (batch gets, `/me/tracks` etc. → `/me/library`, `/playlists/{id}/tracks` → `/items`, search limit max 10). spotis does not translate; Spotify's own errors pass through.
 
+## 5b. Now-playing endpoint (API key, no OAuth)
+
+**5b-1.** `GET /now-playing` returns a simplified `currently-playing` for ONE connected user: `{is_playing, progress_ms, type, item:{id,name,artists[],album,image,duration_ms,url}}` (`item: null` and `is_playing: false` when idle). Works for tracks and episodes.
+**5b-2.** Auth: API key via `X-API-Key`, `Authorization: Bearer`, or `?key=` (query keys can end up in proxy access logs, prefer the header). Keys are `spk_` + 24 random bytes, shown once, stored hashed, bound to a grant (app x user), created/revoked from Dashboard → Users → "Now playing". They survive that user's re-login and die with the grant.
+**5b-3.** The grant must hold `user-read-currently-playing` or `user-read-playback-state`, otherwise 403 with a hint (the app has to request the scope at `/authorize`).
+**5b-4.** Each grant's answer is cached 3 s, so pollers can't burn the shared Spotify quota; the shared upstream cooldown (5d) applies. CORS is open (`*`) so browser widgets can poll.
+**5b-5.** Requests are logged as `api`; query strings are only stored for `/v1/*`, so keys never reach the request log (covered by `flow_test.go`).
+
 ## 6. Data model (SQLite)
 
-`settings` (upstream client id + encrypted secret) · `apps` · `users` (Spotify accounts) · `grants` (app×user, encrypted upstream refresh token, status `ok|reauth`) · `tokens` (hashed access/refresh; `grant_id` NULL for client-credentials) · `auth_requests` (10 min) · `auth_codes` (5 min, single use) · `requests` (usage log, pruned after `SPOTIS_RETENTION_DAYS`, default 30). OAuth log rows store the path only (queries carry codes).
+`settings` (upstream client id + encrypted secret) · `apps` · `users` (Spotify accounts) · `grants` (app×user, encrypted upstream refresh token, status `ok|reauth`) · `api_keys` (hashed now-playing keys → grant) · `tokens` (hashed access/refresh; `grant_id` NULL for client-credentials) · `auth_requests` (10 min) · `auth_codes` (5 min, single use) · `requests` (usage log, pruned after `SPOTIS_RETENTION_DAYS`, default 30). OAuth log rows store the path only (queries carry codes).
 
 ## 7. Code map
 
 **7a.** `cmd/spotis` entrypoint.
 **7b.** `internal/server` mux + route map; `flow_test.go` full-flow test against a fake Spotify.
-**7c.** `internal/oauth` authorize/callback/token. `internal/proxy` API proxy. `internal/upstream` the real-Spotify client, token cache, cooldown.
+**7c.** `internal/oauth` authorize/callback/token. `internal/proxy` API proxy. `internal/nowplaying` the API-key endpoint. `internal/upstream` the real-Spotify client, token cache, cooldown.
 **7d.** `internal/dashboard` JSON API (`/dashboard/api`). `internal/store` SQLite. `internal/usage` async request logger. `internal/crypto`, `internal/util`, `internal/config`.
 **7e.** `internal/webui` embeds `internal/webui/dist` (built from `frontend/`, not committed).
 **7f.** `frontend/` Vite + React + TS + Tailwind + shadcn/ui, **dark only**. Landing at `/`, dashboard at `/dashboard/*`.
@@ -86,7 +95,7 @@ Researched from developer.spotify.com (Oct 2026):
 ## 9. Build, test, release
 
 **9a.** `make test` (vet + race tests) · `make web` (frontend) · `make build`.
-**9b.** `go test ./internal/server` is the quick full-flow check: dashboard auth → upstream config → app create → authorize (PKCE) → callback → token → proxied call with URL rewriting → refresh → client credentials → secret rotation → revoke → rate limits → cooldown → allowlist page → usage log → app delete.
+**9b.** `go test ./internal/server` is the quick full-flow check (includes now-playing keys): dashboard auth → upstream config → app create → authorize (PKCE) → callback → token → proxied call with URL rewriting → refresh → client credentials → secret rotation → revoke → rate limits → cooldown → allowlist page → usage log → app delete.
 **9c.** CI (`.github/workflows/ci.yml`): typecheck/build frontend, `go vet`, `go test -race`, then multi-arch Docker image to GHCR (push on `main` and `v*` tags; PRs build only).
 **9d.** Go toolchain follows `go.mod` (1.26).
 
@@ -101,3 +110,7 @@ Researched from developer.spotify.com (Oct 2026):
 
 - Per-app webhook/audit export; optional grace period for rotated secrets.
 - Cap refresh tokens per grant (they accumulate one per login).
+
+## 12. Screenshots
+
+**12a.** Demo screenshots were taken against a throwaway instance (fake Spotify upstream + seeded data), not committed. To redo: run the binary with `SPOTIS_UPSTREAM_*_URL` pointing at a stub and drive pages with `playwright-core` + `/opt/pw-browsers/chromium-*/chrome-linux/chrome`, sending `Remote-User` as an extra HTTP header.

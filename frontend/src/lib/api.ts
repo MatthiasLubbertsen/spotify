@@ -80,3 +80,15 @@ export type Config = {
 }
 export type Upstream = { client_id: string; has_secret: boolean; configured: boolean; redirect_uri: string }
 export type Secret = { app: App; client_secret: string }
+export type ApiKey = {
+  id: number
+  grant_id: number
+  app_id: string
+  app_name: string
+  spotify_id: string
+  display_name: string
+  label: string
+  prefix: string
+  created_at: number
+  last_used_at: number
+}
