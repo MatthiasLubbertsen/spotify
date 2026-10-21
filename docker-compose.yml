@@ -1,10 +1,12 @@
 # spotis behind Traefik. Tinyauth protects ONLY the dashboard; OAuth + API paths stay public
 # and are guarded by each virtual app's own client auth and tokens.
 #
-# Assumes a Traefik instance with a `websecure` entrypoint + `letsencrypt` resolver and a
-# Tinyauth container that defines the `tinyauth` forward-auth middleware, e.g. on the tinyauth service:
+# Matches the Nest setup: Nest's proxy terminates TLS and forwards spotify.matthiaz.dev to
+# Traefik's plain `web` entrypoint (:80) on the external `proxy` network. No host port.
+# The Tinyauth container must define the `tinyauth` forward-auth middleware and pass the user on:
 #   traefik.http.middlewares.tinyauth.forwardauth.address=http://tinyauth:3000/api/auth/traefik
 #   traefik.http.middlewares.tinyauth.forwardauth.authResponseHeaders=remote-user,remote-email,remote-name,remote-groups
+# and allow the owner (ACL policy is deny): TINYAUTH_APPS_SPOTIFY_USERS_ALLOW=matthias
 services:
   spotis:
     image: ghcr.io/matthiaslubbertsen/spotify:latest
@@ -15,23 +17,21 @@ services:
       # SPOTIS_SECRET_KEY: change-me               # optional; otherwise generated in /data/secret.key
     volumes:
       - spotis-data:/data
-    networks: [traefik]
+    networks: [proxy]
     labels:
       traefik.enable: "true"
-      traefik.docker.network: traefik
+      traefik.docker.network: proxy
       traefik.http.services.spotis.loadbalancer.server.port: "8080"
 
-      # Public router: landing page, /authorize, /api/token, /oauth/callback, /v1/*
+      # Public router: landing page, /authorize, /api/token, /oauth/callback, /v1/*, /now-playing
       traefik.http.routers.spotis.rule: Host(`spotify.matthiaz.dev`)
-      traefik.http.routers.spotis.entrypoints: websecure
-      traefik.http.routers.spotis.tls.certresolver: letsencrypt
+      traefik.http.routers.spotis.entrypoints: web
       traefik.http.routers.spotis.service: spotis
 
       # Dashboard router: higher priority, behind Tinyauth forward-auth
       traefik.http.routers.spotis-dashboard.rule: Host(`spotify.matthiaz.dev`) && PathPrefix(`/dashboard`)
       traefik.http.routers.spotis-dashboard.priority: "100"
-      traefik.http.routers.spotis-dashboard.entrypoints: websecure
-      traefik.http.routers.spotis-dashboard.tls.certresolver: letsencrypt
+      traefik.http.routers.spotis-dashboard.entrypoints: web
       traefik.http.routers.spotis-dashboard.middlewares: tinyauth@docker
       traefik.http.routers.spotis-dashboard.service: spotis
 
@@ -39,5 +39,5 @@ volumes:
   spotis-data:
 
 networks:
-  traefik:
+  proxy:
     external: true

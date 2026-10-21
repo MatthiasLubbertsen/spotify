@@ -17,7 +17,8 @@ base URLs:
 ## Run
 
 1. In the Spotify Developer Portal register the redirect URI `https://spotify.matthiaz.dev/oauth/callback`.
-2. `docker compose up -d` (see `docker-compose.yml`; expects Traefik + a Tinyauth `tinyauth` middleware).
+2. `docker compose up -d` (see `docker-compose.yml`; expects Traefik's `web` entrypoint on the `proxy` network behind
+   Nest's TLS proxy, plus a Tinyauth `tinyauth` middleware that forwards `Remote-User` and allows `spotify`).
 3. Open the site, press **Log in**, then **Upstream** and enter the real client ID/secret.
 4. Create an app under **Apps**; the **Connect** tab shows how to point a client at it.
 
